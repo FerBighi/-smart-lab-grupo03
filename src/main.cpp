@@ -2,7 +2,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoOTA.h>
-#include <DHT.h>
+#include "DHT.h"
+
 
 // =========================================================================
 // 1. CONFIGURAÇÕES DE REDE LOCAL (LAN) - AJUSTE ANTES DE ENVIAR PARA O ESP32
@@ -19,6 +20,7 @@ const char* serverUrl = "http://192.168.0"; // IP do PC com server.js
 #define PIN_RELE_FECHADURA 26
 #define PIN_LED_ALARME 25
 #define PIN_LED_ONBOARD 2
+
 
 #define DHTTYPE DHT22
 DHT dht(PIN_DHT, DHTTYPE);
