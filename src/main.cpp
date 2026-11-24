@@ -12,7 +12,7 @@ const char* password = "desenvolvimento";
 
 // Se enviar para o PC do seu grupo (ponte para G7), use o IP do seu PC:
 // Se enviar direto para o Grupo 7, coloque o IPv4 do Grupo 7 do quadro:
-const char* serverUrl = "http://0.xxx";
+const char* serverUrl = "http://192.168.0.106:3000/api/telemetria";
 
 // =========================================================================
 // 2. MAPEAMENTO DE PINOS (GRUPO 03 + TESTE 3 SPRINT 2)
