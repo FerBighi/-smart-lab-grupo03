@@ -5,13 +5,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Smart Computer Lab — Subsistema 03 (Controle de Acesso)</title>
-    <!-- Chart.js via CDN -->
     <script src="https://jsdelivr.net"></script>
     <style>
         :root {
             --bg-body: #181a1b;
             --bg-card: #242729;
-            --bg-card-inner: #2e3235;
             --border-color: #3a3f42;
             --text-main: #f1f3f5;
             --text-muted: #adb5bd;
@@ -50,7 +48,6 @@
             gap: 14px;
         }
 
-        /* ================= CABEÇALHO ================= */
         header {
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -105,16 +102,15 @@
             border-color: var(--red);
         }
 
-        /* ================= FAIXA DE DIAGNÓSTICO ================= */
         .diagnostic-banner {
             border-radius: 8px;
-            padding: 10px 18px;
+            padding: 12px 18px;
             font-weight: 700;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             text-align: center;
             letter-spacing: 0.6px;
             text-transform: uppercase;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
         }
 
         .diag-normal {
@@ -130,12 +126,11 @@
         }
 
         .diag-critico {
-            background-color: rgba(231, 76, 60, 0.25);
-            border: 1px solid var(--red);
-            color: #ff6b6b;
+            background-color: rgba(231, 76, 60, 0.35);
+            border: 2px solid var(--red);
+            color: #ffffff;
         }
 
-        /* ================= CARTÕES KPI ================= */
         .kpi-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -163,7 +158,7 @@
         }
 
         .kpi-value {
-            font-size: 1.55rem;
+            font-size: 1.5rem;
             font-weight: 800;
             letter-spacing: 0.5px;
         }
@@ -189,18 +184,17 @@
             color: var(--yellow);
         }
 
-        /* ================= PAINEL DE CONTROLE ================= */
         .control-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(3, 1fr);
             gap: 14px;
         }
 
         .btn-control {
             border: none;
             border-radius: 8px;
-            padding: 14px 18px;
-            font-size: 0.95rem;
+            padding: 14px 16px;
+            font-size: 0.9rem;
             font-weight: 700;
             color: #ffffff;
             cursor: pointer;
@@ -210,7 +204,7 @@
         }
 
         .btn-control:active {
-            transform: scale(0.99);
+            transform: scale(0.98);
         }
 
         .btn-ligar {
@@ -231,7 +225,15 @@
             background-color: var(--red-btn-hover);
         }
 
-        /* ================= GRÁFICO CHART.JS (ALTURA TRAVADA 220PX) ================= */
+        .btn-armar {
+            background-color: var(--amber-btn);
+            border: 1px solid #c9a145;
+        }
+
+        .btn-armar:hover {
+            background-color: var(--amber-btn-hover);
+        }
+
         .panel-box {
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -249,16 +251,16 @@
             margin-bottom: 12px;
         }
 
-        /* REGRA OBRIGATÓRIA DO ENUNCIADO: ALTURA TRAVADA EM 220PX */
         .chart-wrapper {
             position: relative;
             width: 100%;
             height: 220px;
         }
 
-        /* ================= LOG DE AUDITORIA ================= */
         .table-wrapper {
             overflow-x: auto;
+            max-height: 220px;
+            overflow-y: auto;
         }
 
         table {
@@ -273,6 +275,9 @@
             color: var(--text-muted);
             border-bottom: 1px solid var(--border-color);
             font-weight: 600;
+            background-color: var(--bg-card);
+            position: sticky;
+            top: 0;
         }
 
         tbody td {
@@ -297,303 +302,268 @@
 
 <body>
     <div class="container">
-        <!-- CABEÇALHO -->
         <header>
             <div class="header-title">
-                <h1 id="titulo-subsistema">SMART COMPUTER LAB — SUBSISTEMA 03: CONTROLE DE ACESSO E SEGURANÇA</h1>
+                <h1>SMART COMPUTER LAB — SUBSISTEMA 03: CONTROLE DE ACESSO E SEGURANÇA</h1>
                 <div class="header-meta">
                     <span>Grupo: <strong id="meta-grupo">grupo_03</strong></span>
                     <span>IP ESP32: <strong id="meta-ip">Aguardando...</strong></span>
                     <span>MAC: <strong id="meta-mac">--:--:--:--:--:--</strong></span>
-                    <span>Firmware: <strong id="meta-fw">v1.0-LAN</strong></span>
+                    <span>Última Atualização: <strong id="meta-hora">--:--:--</strong></span>
                 </div>
             </div>
             <div id="badge-conexao" class="badge-status badge-offline">OFFLINE</div>
         </header>
 
-        <!-- FAIXA COLORIDA DE DIAGNÓSTICO (VERDE / AMARELO / VERMELHO) -->
-        <div id="faixa-diagnostico" class="diagnostic-banner diag-normal">
-            DIAGNÓSTICO DO SISTEMA: NORMAL — OPERAÇÃO SEGURA
+        <div id="banner-diagnostico" class="diagnostic-banner diag-normal">
+            STATUS DO SISTEMA: AGUARDANDO TELEMETRIA DA BANCADA...
         </div>
 
-        <!-- CARTÕES DE INDICADORES (KPIs) -->
-        <section class="kpi-grid">
-            <!-- KPI 1: ESTADO DO RELÉ / PORTA -->
+        <div class="kpi-grid">
             <div class="kpi-card">
-                <div class="kpi-label">ESTADO DA PORTA / RELÉ LOCAL</div>
-                <div id="kpi-porta" class="kpi-value text-green">FECHADA</div>
-                <div id="kpi-rele-sub" class="kpi-sub">Relé GPIO 26: DESLIGADO</div>
+                <span class="kpi-label">Estado da Porta / Acesso</span>
+                <span id="kpi-porta" class="kpi-value text-green">FECHADA</span>
+                <span id="kpi-porta-sub" class="kpi-sub">Sensor Magnético / Acesso</span>
             </div>
 
-            <!-- KPI 2: VARIÁVEL PRINCIPAL DO GRUPO -->
             <div class="kpi-card">
-                <div id="kpi-var-nome" class="kpi-label">MODO DE SEGURANÇA / SENSOR</div>
-                <div id="kpi-var-valor" class="kpi-value text-blue">ARMADO / ATIVO</div>
-                <div id="kpi-fechadura-sub" class="kpi-sub">Fechadura: TRANCADA</div>
+                <span class="kpi-label">Módulo Relé (GPIO 26) & LED (GPIO 2)</span>
+                <span id="kpi-rele" class="kpi-value text-blue">DESARMADO</span>
+                <span id="kpi-modo-sub" class="kpi-sub">Modo: Aula Ativa</span>
             </div>
 
-            <!-- KPI 3: TEMPERATURA E UMIDADE (DHT) -->
             <div class="kpi-card">
-                <div class="kpi-label">AMBIENTE HALL (SENSOR DHT)</div>
-                <div class="kpi-value">
-                    <span id="kpi-temp">--.-</span> °C &nbsp;|&nbsp; <span id="kpi-umid">--</span>% UR
-                </div>
-                <div class="kpi-sub">Atualização LAN a cada 2s</div>
+                <span class="kpi-label">Ambiente Técnico (DHT11/22)</span>
+                <span id="kpi-ambiente" class="kpi-value text-yellow">-- °C | -- %</span>
+                <span id="kpi-ambiente-sub" class="kpi-sub">Monitoramento Térmico da Porta</span>
             </div>
-        </section>
+        </div>
 
-        <!-- PAINEL DE CONTROLE REMOTO (ACIONAMENTO DO RELÉ) -->
-        <section class="control-grid">
+        <div class="control-grid">
             <button class="btn-control btn-ligar" onclick="enviarComando('LIGAR')">
-                ▶ LIBERAR PORTA / ACIONAR RELÉ
+                🔓 LIGAR / LIBERAR PORTA
             </button>
             <button class="btn-control btn-parar" onclick="enviarComando('PARAR')">
-                ⏹ TRANCAR PORTA / CORTE DE EMERGÊNCIA
+                🔒 PARAR / TRANCAR PORTA
             </button>
-        </section>
+            <button id="btn-modo-armado" class="btn-control btn-armar" onclick="enviarComando('ALTERNAR_ARMADO')">
+                🛡️ ALTERNAR MODO ARMADO
+            </button>
+        </div>
 
-        <!-- GRÁFICO EM TEMPO REAL (ALTURA TRAVADA EM 220PX) -->
-        <section class="panel-box">
-            <div class="panel-title">HISTÓRICO DE ABERTURAS E ACIONAMENTO DO RELÉ (TEMPO REAL)</div>
-            <div class="chart-wrapper">
-                <canvas id="graficoAberturas"></canvas>
+        <div class="panel-box">
+            <div class="panel-title">Histórico em Tempo Real — Temperatura (°C) e Umidade (%)</div>
+            <div class="panel-box">
+                <div class="panel-title">Log de Auditoria de Acesso e Comandos</div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Data / Hora</th>
+                                <th>Origem</th>
+                                <th>Evento Registrado</th>
+                                <th>Severidade</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-logs">
+                            <tr>
+                                <td colspan="4" style="text-align:center; color: var(--text-muted);">
+                                    Nenhum evento registrado até o momento.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </section>
+        </div>
 
-        <!-- LOG DE AUDITORIA DE ACESSOS -->
-        <section class="panel-box">
-            <div class="panel-title">LOG DE AUDITORIA DE ACESSOS E COMANDOS</div>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Data/Hora</th>
-                            <th>Origem</th>
-                            <th>Ação</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabela-auditoria">
-                        <tr>
-                            <td colspan="4" style="text-align: center; color: #adb5bd;">
-                                Aguardando eventos da rede local...
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-    </div>
-
-    <script>
-        const GRUPO_ID = "grupo_03";
-        let ultimoEstadoRele = null;
-        let ultimoTimestampRecebido = 0;
-        const logsAuditoria = [];
-
-        // =========================================================================
-        // 1. INICIALIZAÇÃO DO GRÁFICO CHART.JS (ALTURA TRAVADA EM 220PX)
-        // =========================================================================
-        const ctx = document.getElementById("graficoAberturas").getContext("2d");
-        const graficoAberturas = new Chart(ctx, {
-            type: "line",
-            data: {
-                labels: [],
-                datasets: [
-                    {
-                        label: "Estado da Porta / Relé (1 = Aberta/Ligado, 0 = Fechada/Desligado)",
-                        data: [],
-                        borderColor: "#2ecc71",
-                        backgroundColor: "rgba(46, 204, 113, 0.15)",
-                        borderWidth: 2.5,
-                        stepped: true, // Gráfico em degrau igual ao wireframe
-                        fill: true,
-                        pointRadius: 2,
-                        pointBackgroundColor: "#2ecc71"
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false, // REGRA OBRIGATÓRIA DO ENUNCIADO
-                animation: false,
-                scales: {
-                    y: {
-                        min: 0,
-                        max: 1,
-                        ticks: {
-                            stepSize: 0.5,
-                            color: "#adb5bd",
-                            callback: function (value) {
-                                if (value === 1) return "Aberta (1)";
-                                if (value === 0) return "Fechada (0)";
-                                return value;
-                            }
+        <script>
+            var ctx = document.getElementById('graficoTelemetria').getContext('2d');
+            var grafico = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Temperatura (°C)',
+                            data: [],
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.15)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true
                         },
-                        grid: { color: "#343a40" }
-                    },
-                    x: {
-                        ticks: {
-                            color: "#adb5bd",
-                            maxTicksLimit: 8
-                        },
-                        grid: { color: "#2c3034" }
-                    }
+                        {
+                            label: 'Umidade (%)',
+                            data: [],
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.15)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true
+                        }
+                    ]
                 },
-                plugins: {
-                    legend: {
-                        display: false
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    scales: {
+                        x: {
+                            ticks: { color: '#adb5bd', maxTicksLimit: 10 },
+                            grid: { color: '#2f3336' }
+                        },
+                        y: {
+                            ticks: { color: '#adb5bd' },
+                            grid: { color: '#2f3336' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#f1f3f5' }
+                        }
                     }
                 }
-            }
-        });
-        // =========================================================================
-        // 2. FUNÇÃO PARA ADICIONAR REGISTRO NO LOG DE AUDITORIA
-        // =========================================================================
-        function registrarAuditoria(origem, acao, status) {
-            const agora = new Date().toLocaleString("pt-BR");
-            logsAuditoria.unshift({ dataHora: agora, origem, acao, status });
-            if (logsAuditoria.length > 8) logsAuditoria.pop();
-            const tbody = document.getElementById("tabela-auditoria");
-            tbody.innerHTML = logsAuditoria
-                .map(
-                    (item) => `
-${item.dataHora}
-${item.origem}${item.acao}${item.status}`
-                )
-                .join("");
-        }
-        // =========================================================================
-        // 3. ENVIO DE COMANDO REMOTO PARA O RELÉ (POST /api/comando)
-        // =========================================================================
-        async function enviarComando(comando) {
-            try {
-                const resposta = await fetch("/api/comando", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        grupo_id: GRUPO_ID,
-                        comando: comando
-                    })
-                });
-                const dados = await resposta.json();
-                const acaoTexto =
-                    comando === "LIGAR"
-                        ? "Porta Liberada / Relé Acionado via Web"
-                        : "Porta Trancada / Relé Desligado via Web";
-                registrarAuditoria("Dashboard Web", acaoTexto, "ENVIADO");
-                console.log("Comando enviado:", dados);
-            } catch (erro) {
-                console.error("Erro ao enviar comando:", erro);
-                registrarAuditoria("Dashboard Web", "Falha ao enviar comando " + comando, "ERRO");
-            }
-        }
-        // =========================================================================
-        // 4. ATUALIZAÇÃO DA INTERFACE COM OS DADOS DO SERVIDOR (GET /api/telemetria)
-        // =========================================================================
-        function atualizarInterface(historico) {
-            if (!Array.isArray(historico) || historico.length === 0) return;
-            const atual = historico[historico.length - 1];
-            ultimoTimestampRecebido = Date.now();
-            // Badge ONLINE
-            const badge = document.getElementById("badge-conexao");
-            badge.textContent = "ONLINE";
-            badge.className = "badge-status badge-online";
-            // Metadados do Cabeçalho
-            if (atual.grupo_id) document.getElementById("meta-grupo").textContent = atual.grupo_id;
-            if (atual.ip_local) document.getElementById("meta-ip").textContent = atual.ip_local;
-            if (atual.mac_address) document.getElementById("meta-mac").textContent = atual.mac_address;
-            if (atual.firmware_versao) document.getElementById("meta-fw").textContent = atual.firmware_versao;
-            // KPI 1: Estado da Porta / Relé
-            const releAtivo = Boolean(atual.rele_ativo);
-            const kpiPorta = document.getElementById("kpi-porta");
-            const kpiReleSub = document.getElementById("kpi-rele-sub");
-            const kpiFechaduraSub = document.getElementById("kpi-fechadura-sub");
-            if (releAtivo) {
-                kpiPorta.textContent = "ABERTA";
-                kpiPorta.className = "kpi-value text-yellow";
-                kpiReleSub.textContent = "Relé GPIO 26: LIGADO";
-                kpiFechaduraSub.textContent = "Fechadura: LIBERADA";
-            } else {
-                kpiPorta.textContent = "FECHADA";
-                kpiPorta.className = "kpi-value text-green";
-                kpiReleSub.textContent = "Relé GPIO 26: DESLIGADO";
-                kpiFechaduraSub.textContent = "Fechadura: TRANCADA";
-            }
-            // Detecta mudança física de estado para registrar na auditoria
-            if (ultimoEstadoRele !== null && ultimoEstadoRele !== releAtivo) {
-                registrarAuditoria(
-                    "ESP32 Borda",
-                    releAtivo ? "Porta Aberta (Relé Ativado)" : "Porta Fechada (Relé Desativado)",
-                    atual.status_alerta || "OK"
-                );
-            }
-            ultimoEstadoRele = releAtivo;
-            // KPI 2: Variável Principal do Grupo
-            if (atual.variavel_principal_nome) {
-                document.getElementById("kpi-var-nome").textContent = atual.variavel_principal_nome;
-            }
-            if (atual.variavel_principal_valor !== undefined) {
-                document.getElementById("kpi-var-valor").textContent = atual.variavel_principal_valor;
-            }
-            // KPI 3: Temperatura e Umidade
-            if (atual.temperatura !== undefined) {
-                document.getElementById("kpi-temp").textContent = Number(atual.temperatura).toFixed(1);
-            }
-            if (atual.umidade !== undefined) {
-                document.getElementById("kpi-umid").textContent = Math.round(Number(atual.umidade));
-            }
-            // Faixa Colorida de Diagnóstico (Verde / Amarelo / Vermelho)
-            const statusAlerta = (atual.status_alerta || "NORMAL").toUpperCase();
-            const faixa = document.getElementById("faixa-diagnostico");
-
-            if (statusAlerta.includes("CRITICO") || statusAlerta.includes("ALERTA") || statusAlerta.includes("INVASAO")) {
-                faixa.className = "diagnostic-banner diag-critico";
-                faixa.textContent = "DIAGNÓSTICO DO SISTEMA: " + statusAlerta + " — VERIFICAR ACESSO IMEDIATAMENTE";
-            } else if (statusAlerta.includes("ATENCAO") || releAtivo) {
-                faixa.className = "diagnostic-banner diag-atencao";
-                faixa.textContent = "DIAGNÓSTICO DO SISTEMA: " + statusAlerta + " — PORTA EM OPERAÇÃO";
-            } else {
-                faixa.className = "diagnostic-banner diag-normal";
-                faixa.textContent = "DIAGNÓSTICO DO SISTEMA: " + statusAlerta + " — PERÍMETRO SEGURO";
-            }
-
-            // Atualiza o Gráfico Chart.js com as últimas leituras
-            const labels = historico.map((item) => {
-                if (item.timestamp) {
-                    const dataObj = new Date(item.timestamp);
-                    return isNaN(dataObj) ? item.timestamp : dataObj.toLocaleTimeString("pt-BR");
-                }
-                return "";
             });
 
-            const valoresRele = historico.map((item) => (item.rele_ativo ? 1 : 0));
-
-            graficoAberturas.data.labels = labels;
-            graficoAberturas.data.datasets[0].data = valoresRele;
-            graficoAberturas.update();
-
-        }
-        // =========================================================================
-        // 5. LOOP DE POLLING A CADA 2 SEGUNDOS + VERIFICAÇÃO DE OFFLINE
-        // =========================================================================
-        async function buscarTelemetria() {
-            try {
-                const resposta = await fetch("/api/telemetria");
-                const dados = await resposta.json();
-                // Suporta tanto retorno em array direto [...] quanto objeto { historico: [...] }
-                const lista = Array.isArray(dados) ? dados : dados.historico || [];
-                atualizarInterface(lista);
-            } catch (erro) {
-                console.warn("Aguardando servidor Node.js na porta 3000...", erro);
+            async function enviarComando(acao) {
+                try {
+                    await fetch('/api/comando', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            grupo_id: 'grupo_03',
+                            comando: acao
+                        })
+                    });
+                    atualizarDashboard();
+                } catch (erro) {
+                    console.error('Erro ao enviar comando:', erro);
+                }
             }
-            // Se ficar mais de 6 segundos sem receber pacotes, marca OFFLINE
-            if (ultimoTimestampRecebido > 0 && Date.now() - ultimoTimestampRecebido > 6000) {
-                const badge = document.getElementById("badge-conexao");
-                badge.textContent = "OFFLINE";
-                badge.className = "badge-status badge-offline";
+
+            async function atualizarDashboard() {
+                try {
+                    var resposta = await fetch('/api/telemetria');
+                    var dados = await resposta.json();
+
+                    var badgeConexao = document.getElementById('badge-conexao');
+                    var banner = document.getElementById('banner-diagnostico');
+
+                    if (!dados.online || !dados.atual) {
+                        badgeConexao.textContent = 'OFFLINE';
+                        badgeConexao.className = 'badge-status badge-offline';
+                        banner.textContent = 'CONEXÃO PERDIDA COM ESP32 — OPERANDO EM AUTONOMIA DE BORDA';
+                        banner.className = 'diagnostic-banner diag-critico';
+                        return;
+                    }
+
+                    badgeConexao.textContent = 'ONLINE';
+                    badgeConexao.className = 'badge-status badge-online';
+
+                    var atual = dados.atual;
+
+                    document.getElementById('meta-ip').textContent = atual.ip || 'Rede Local LAN';
+                    document.getElementById('meta-mac').textContent = atual.mac || 'ESP32-G03';
+                    document.getElementById('meta-hora').textContent = atual.timestamp || '--:--:--';
+
+                    var valorPrincipal = Number(atual.variavel_principal_valor || 0);
+                    var releAtivo = Boolean(atual.rele_ativo || valorPrincipal === 1);
+
+                    var kpiPorta = document.getElementById('kpi-porta');
+                    var kpiRele = document.getElementById('kpi-rele');
+                    var kpiModoSub = document.getElementById('kpi-modo-sub');
+                    var btnArmado = document.getElementById('btn-modo-armado');
+
+                    if (valorPrincipal === 2 || atual.alerta_critico === true) {
+                        banner.textContent = 'ALERTA CRÍTICO: INTRUSÃO OU LIMITE CRÍTICO VIOLADO NA PORTA!';
+                        banner.className = 'diagnostic-banner diag-critico';
+                        kpiPorta.textContent = 'VIOLAÇÃO / ABERTA';
+                        kpiPorta.className = 'kpi-value text-red';
+                    } else if (valorPrincipal === 1) {
+                        banner.textContent = 'ACESSO LIBERADO — PORTA DESTRAVADA';
+                        banner.className = 'diagnostic-banner diag-atencao';
+                        kpiPorta.textContent = 'ABERTA (AUTORIZADA)';
+                        kpiPorta.className = 'kpi-value text-yellow';
+                    } else {
+                        banner.textContent = 'SISTEMA NORMAL — PORTA TRANCADA E MONITORADA';
+                        banner.className = 'diagnostic-banner diag-normal';
+                        kpiPorta.textContent = 'FECHADA / SEGURA';
+                        kpiPorta.className = 'kpi-value text-green';
+                    }
+
+                    if (releAtivo) {
+                        kpiRele.textContent = 'ARMADO / ATIVO (ON)';
+                        kpiRele.className = 'kpi-value text-green';
+                    } else {
+                        kpiRele.textContent = 'DESARMADO (OFF)';
+                        kpiRele.className = 'kpi-value text-blue';
+                    }
+
+                    if (dados.modo_armado) {
+                        kpiModoSub.textContent = 'Modo: TRANCADO / ARMADO';
+                        btnArmado.textContent = 'MODO: ARMADO (CLIQUE P/ DESARMAR)';
+                    } else {
+                        kpiModoSub.textContent = 'Modo: AULA ATIVA (DESARMADO)';
+                        btnArmado.textContent = 'MODO: AULA ATIVA (CLIQUE P/ ARMAR)';
+                    }
+
+                    var temp = Number(atual.temperatura);
+                    var umid = Number(atual.umidade);
+                    var tempTexto = (!Number.isNaN(temp)) ? temp.toFixed(1) : '--';
+                    var umidTexto = (!Number.isNaN(umid)) ? umid.toFixed(1) : '--';
+                    document.getElementById('kpi-ambiente').textContent = tempTexto + ' °C | ' + umidTexto + ' %';
+
+                    if (Array.isArray(dados.historico)) {
+                        var labelsValidas = [];
+                        var tempsValidas = [];
+                        var umidsValidas = [];
+
+                        dados.historico.forEach(function (item) {
+                            var t = Number(item.temperatura);
+                            var u = Number(item.umidade);
+                            if (!Number.isNaN(t) && !Number.isNaN(u)) {
+                                labelsValidas.push(item.timestamp || '');
+                                tempsValidas.push(t);
+                                umidsValidas.push(u);
+                            }
+                        });
+
+                        grafico.data.labels = labelsValidas;
+                        grafico.data.datasets.data = tempsValidas;
+                        grafico.data.datasets.data = umidsValidas;
+                        grafico.update();
+                    }
+
+                    if (Array.isArray(dados.logs) && dados.logs.length > 0) {
+                        var tbody = document.getElementById('tabela-logs');
+                        var htmlLinhas = '';
+                        dados.logs.forEach(function (log) {
+                            var corStatus = log.status === 'CRITICO' ? 'text-red' :
+                                log.status === 'ATENCAO' ? 'text-yellow' : 'text-green';
+                            htmlLinhas += '<tr>' +
+                                '<td>' + log.data_hora + '</td>' +
+                                '<td>' + log.origem + '</td>' +
+                                '<td>' + log.evento + '</td>' +
+                                '<td class="' + corStatus + '"><strong>' + log.status + '</strong></td>' +
+                                '</tr>';
+                        });
+                        tbody.innerHTML = htmlLinhas;
+                    }
+
+                } catch (erro) {
+                    var badgeConexao = document.getElementById('badge-conexao');
+                    var banner = document.getElementById('banner-diagnostico');
+                    badgeConexao.textContent = 'OFFLINE';
+                    badgeConexao.className = 'badge-status badge-offline';
+                    banner.textContent = 'SERVIDOR LOCAL NODE.JS OFFLINE';
+                    banner.className = 'diagnostic-banner diag-critico';
+                }
             }
-        }
-        // Inicia a busca imediatamente e repete a cada 2000ms (2 segundos)
-        buscarTelemetria();
-        setInterval(buscarTelemetria, 2000);
+
+            setInterval(atualizarDashboard, 1000);
+            atualizarDashboard();
+        </script>
+</body>
+
+</html>
