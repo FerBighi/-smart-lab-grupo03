@@ -15,6 +15,7 @@ let historicoLeituras = []; // Mantém as últimas 50 leituras
 let logAuditoria = [];      // Registra horários exatos de abertura e intrusão
 let comandoPendente = "NENHUM";
 let modoArmado = false;     // false = Aula Ativa | true = Trancado/Armado
+let ultimoContatoMs = 0;    // Timestamp em ms da última telemetria recebida do ESP32
 
 // Rota raiz: abre automaticamente o dashboard.html ao acessar http://localhost:3000
 app.get('/', (req, res) => {
@@ -27,22 +28,24 @@ app.get('/', (req, res) => {
 app.post('/api/telemetria', async (req, res) => {
   const dados = req.body;
   const agora = new Date();
+  ultimoContatoMs = Date.now(); // Atualiza relógio de atividade (Teste 1)
+
   const horarioFormatado = agora.toLocaleTimeString('pt-BR');
   const dataHoraCompleta = agora.toLocaleString('pt-BR');
 
   // TESTE 4 (Bug Hunt): Bloqueia valores nulos/NaN para não quebrar o Chart.js
   const ultimaValida = historicoLeituras[historicoLeituras.length - 1];
-  const tempSegura = (typeof dados.temperatura === 'number' && !isNaN(dados.temperatura)) 
-    ? dados.temperatura 
+  const tempSegura = (typeof dados.temperatura === 'number' && !isNaN(dados.temperatura))
+    ? dados.temperatura
     : (ultimaValida ? ultimaValida.temperatura : 25.0);
-    
-  const umidSegura = (typeof dados.umidade === 'number' && !isNaN(dados.umidade)) 
-    ? dados.umidade 
+
+  const umidSegura = (typeof dados.umidade === 'number' && !isNaN(dados.umidade))
+    ? dados.umidade
     : (ultimaValida ? ultimaValida.umidade : 50.0);
 
   const leituraComTimestamp = {
     ...dados,
-    grupo_id: "grupo_03", // Garante a identificação exata exigida na Sprint 2
+    grupo_id: "grupo_03", // Identificação exata exigida na Sprint 2
     temperatura: tempSegura,
     umidade: umidSegura,
     timestamp: horarioFormatado,
@@ -95,7 +98,7 @@ app.post('/api/telemetria', async (req, res) => {
       comandoParaEnviar = dadosG7.comando;
     }
   } catch (erro) {
-    console.log("⚠️ Aviso: Servidor do Grupo 7 offline no momento.");
+    console.log("Aviso: Servidor do Grupo 7 offline no momento.");
   }
   */
 
@@ -111,9 +114,12 @@ app.post('/api/telemetria', async (req, res) => {
 // =========================================================================
 app.get('/api/telemetria', (req, res) => {
   const ultimaLeitura = historicoLeituras[historicoLeituras.length - 1] || null;
+  // Considera ONLINE se recebeu telemetria nos últimos 5 segundos (Teste 1)
+  const estaOnline = (Date.now() - ultimoContatoMs) < 5000;
 
   res.json({
     grupo_id: "grupo_03",
+    online: estaOnline,
     atual: ultimaLeitura,
     historico: historicoLeituras,
     logs: logAuditoria,
@@ -162,8 +168,8 @@ app.post('/api/comando', (req, res) => {
 
 // Inicia o servidor escutando em toda a rede local (0.0.0.0) na porta 3000
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`=========================================================`);
-  console.log(`🚀 Servidor Node.js - Grupo 03 (Controle de Acesso)`);
-  console.log(`📡 Rodando na porta ${PORT} (Acesse: http://localhost:${PORT})`);
-  console.log(`=========================================================`);
+  console.log("=========================================================");
+  console.log("Servidor Node.js - Grupo 03 (Controle de Acesso)");
+  console.log("Rodando na porta " + PORT + " (Acesse: http://localhost:" + PORT + ")");
+  console.log("=========================================================");
 });
