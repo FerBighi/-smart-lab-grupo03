@@ -1,231 +1,218 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <ArduinoOTA.h>
+#include <ArduinoJson.h>
 #include "DHT.h"
 
-// =========================================================================
-// 1. CONFIGURAÇÕES DE REDE LOCAL (LAN) - PREENCHER NA AULA
-// =========================================================================
+// --- CONFIGURAÇÕES DE REDE E SERVIDOR NODE.JS ---
 const char* ssid = "SENAI-DEV2";
 const char* password = "desenvolvimento";
+// Substitua pelo endereço ngrok ou IP da rede local onde o Node.js está rodando
+const char* SERVER_URL = "http://192.168.0.103:3000/api/telemetria";
 
-// Se enviar para o PC do seu grupo (ponte para G7), use o IP do seu PC:
-// Se enviar direto para o Grupo 7, coloque o IPv4 do Grupo 7 do quadro:
-const char* serverUrl = "http://192.168.0.106:3000/api/telemetria";
-
-// =========================================================================
-// 2. MAPEAMENTO DE PINOS (GRUPO 03 + TESTE 3 SPRINT 2)
-// =========================================================================
-#define PIN_DHT 4
-#define PIN_BOTAO_SAIDA 14     // Botoeira externa na protoboard
-#define PIN_BOTAO_BOOT 0       // Botão físico BOOT na placa ESP32 (Teste 3)
-#define PIN_RELE_FECHADURA 26  // Módulo Relé Local (Obrigatório)
-#define PIN_LED_ALARME 25      // LED Vermelho de Alarme
-#define PIN_LED_ONBOARD 2      // LED Azul interno do ESP32 (Obrigatório)
+// --- DEFINIÇÃO DE PINOS ---
+#define PIN_BOTOEIRA   14
+#define PIN_SENSOR_PTA 27
+#define PIN_DHT        15
+#define PIN_RELE       26
+#define PIN_LED_ALARM  25
+#define PIN_BUZZER     33
 
 #define DHTTYPE DHT22
 DHT dht(PIN_DHT, DHTTYPE);
 
-// Variáveis de Controle de Acesso e Segurança
-bool modoArmado = false;          // false = Aula Ativa | true = Lab Encerrado (Armado)
-bool portaDestravada = false;     // Estado atual do relé da fechadura
-bool alarmeIntrusao = false;      // Estado de alerta por tentativa de abertura bloqueada
-
+// --- VARIÁVEIS DE CONTROLE ---
+bool modoArmado = true;          // true = Trancado/Armado (Fora de aula) | false = Liberado (Em aula)
+bool fechaduraDestravada = false;
 unsigned long tempoDestravamento = 0;
-const unsigned long DURACAO_ABERTURA_MS = 5000; // 5 segundos temporizados
-unsigned long ultimoEnvio = 0;
-unsigned long ultimoDebounce = 0;
-unsigned long ultimaTentativaWifi = 0;
-bool estadoBotaoAnterior = HIGH;
+const unsigned long DURACAO_RELE = 5000; // 5 segundos destravado
 
-// Protótipos das funções
-void liberarFechadura(String origem);
-void trancarEArmar(String origem);
-void enviarTelemetria(String eventoLog);
+bool portaAberta = false;
+bool portaAbertaAnterior = false;
+unsigned long tempoPortaAbriu = 0;
+const unsigned long LIMITE_PORTA_ABERTA = 15000; // 15 segundos de tolerância antes de alarme
+
+bool alarmeAtivo = false;
+String motivoAlarme = "Nenhum";
+
+unsigned long ultimoEnvioTelemetria = 0;
+
+// --- PROTÓTIPOS DAS FUNÇÕES ---
+void acionarFechadura(String origem);
+void registrarLogNodeJS(String tipo, String descricao);
+void sincronizarComServidor();
 
 void setup() {
   Serial.begin(115200);
 
-  pinMode(PIN_RELE_FECHADURA, OUTPUT);
-  pinMode(PIN_LED_ALARME, OUTPUT);
-  pinMode(PIN_LED_ONBOARD, OUTPUT);
-  pinMode(PIN_BOTAO_SAIDA, INPUT_PULLUP);
-  pinMode(PIN_BOTAO_BOOT, INPUT_PULLUP);
+  pinMode(PIN_BOTOEIRA, INPUT_PULLUP);
+  pinMode(PIN_SENSOR_PTA, INPUT_PULLUP); // LOW = Fechada, HIGH = Aberta
+  pinMode(PIN_RELE, OUTPUT);
+  pinMode(PIN_LED_ALARM, OUTPUT);
+  pinMode(PIN_BUZZER, OUTPUT);
+
+  digitalWrite(PIN_RELE, LOW);
+  digitalWrite(PIN_LED_ALARM, LOW);
+  noTone(PIN_BUZZER);
 
   dht.begin();
 
-  // Inicia com a porta trancada e sem alarmes
-  digitalWrite(PIN_RELE_FECHADURA, LOW);
-  digitalWrite(PIN_LED_ONBOARD, LOW);
-  digitalWrite(PIN_LED_ALARME, LOW);
-
-  // Conexão Wi-Fi Local com timeout (não trava a borda se o roteador demorar)
-  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  Serial.print("Conectando ao Wi-Fi Local");
-  unsigned long inicioConexao = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - inicioConexao < 10000)) {
+  Serial.print("Conectando ao Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
+  Serial.println("\nWi-Fi Conectado! IP: " + WiFi.localIP().toString());
+}
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nConectado! IP ESP32: " + WiFi.localIP().toString());
-  } else {
-    Serial.println("\n[AVISO BORDA] Wi-Fi indisponivel no boot. Operando em modo autonomo!");
-  }
+void acionarFechadura(String origem) {
+  Serial.println("[ACESSO] Fechadura destravada via: " + origem);
+  fechaduraDestravada = true;
+  tempoDestravamento = millis();
+  digitalWrite(PIN_RELE, HIGH);
 
-  // Configuração OTA Local
-  ArduinoOTA.setHostname("ESP32-LAB-GRUPO-03");
-  ArduinoOTA.setPassword("senai123");
-  ArduinoOTA.begin();
+  alarmeAtivo = false;
+  motivoAlarme = "Nenhum";
 
-  Serial.println("=== GRUPO 3: CONTROLE DE ACESSO E SEGURANCA INICIADO ===");
+  registrarLogNodeJS("ABERTURA_AUTORIZADA", "Porta destravada via " + origem);
 }
 
 void loop() {
-  ArduinoOTA.handle(); // Mantém atualização sem fio ativa sem bloquear
   unsigned long agora = millis();
 
-  // 0. Reconexão Automática do Wi-Fi sem travar a borda (Teste 1 - Bug Hunt)
-  if (WiFi.status() != WL_CONNECTED && (agora - ultimaTentativaWifi >= 5000)) {
-    ultimaTentativaWifi = agora;
-    Serial.println("[REDE] Wi-Fi desconectado. Tentando reconectar automaticamente...");
-    WiFi.disconnect();
-    WiFi.reconnect();
+  // 1. LEITURA DA BOTOEIRA INTERNA DE SAÍDA
+  if (digitalRead(PIN_BOTOEIRA) == LOW) {
+    if (!fechaduraDestravada) {
+      acionarFechadura("Botoeira Interna");
+    }
+    delay(200);
   }
 
-  // 1. Leitura dos Botões Físicos (Botoeira GPIO 14 OU Botão BOOT GPIO 0)
-  bool leituraBotao = (digitalRead(PIN_BOTAO_SAIDA) == LOW || digitalRead(PIN_BOTAO_BOOT) == LOW) ? LOW : HIGH;
+  // 2. CONTROLE DE TEMPO DO RELÉ (5 SEGUNDOS)
+  if (fechaduraDestravada && (agora - tempoDestravamento >= DURACAO_RELE)) {
+    fechaduraDestravada = false;
+    digitalWrite(PIN_RELE, LOW);
+    Serial.println("[ACESSO] Fechadura trancada novamente (5s expirados).");
+  }
 
-  if (leituraBotao == LOW && estadoBotaoAnterior == HIGH && (agora - ultimoDebounce > 300)) {
-    ultimoDebounce = agora;
+  // 3. LEITURA DO SENSOR DE PORTA (HIGH = Aberta, LOW = Fechada)
+  portaAberta = (digitalRead(PIN_SENSOR_PTA) == HIGH);
 
-    if (!modoArmado) {
-      liberarFechadura("Botao Fisico Local");
-    } else {
-      alarmeIntrusao = true;
-      digitalWrite(PIN_LED_ALARME, HIGH);
-      Serial.println("\n[ALERTA CRITICO] Tentativa de abertura com laboratorio ARMADO!");
-      enviarTelemetria("TENTATIVA_INTRUSAO");
+  // Transição: Fechada -> Aberta
+  if (portaAberta && !portaAbertaAnterior) {
+    tempoPortaAbriu = agora;
+    Serial.println("[SENSOR] Porta foi ABERTA.");
+
+    if (modoArmado && !fechaduraDestravada) {
+      alarmeAtivo = true;
+      motivoAlarme = "INTRUSAO DETECTADA (Porta aberta em modo Armado!)";
+      Serial.println("[ALERTA] " + motivoAlarme);
+      registrarLogNodeJS("INTRUSAO", motivoAlarme);
     }
   }
-  estadoBotaoAnterior = leituraBotao;
 
-  // 2. Temporizador Automático da Fechadura (Tranca após 5 segundos)
-  if (portaDestravada && (agora - tempoDestravamento >= DURACAO_ABERTURA_MS)) {
-    portaDestravada = false;
-    digitalWrite(PIN_RELE_FECHADURA, LOW);
-    digitalWrite(PIN_LED_ONBOARD, LOW);
-    Serial.println("[AUTO-LOCK] Tempo de 5s expirado. Fechadura TRANCADA.");
-    enviarTelemetria("PORTA_TRANCADA_AUTO");
+  // Transição: Aberta -> Fechada
+  if (!portaAberta && portaAbertaAnterior) {
+    Serial.println("[SENSOR] Porta foi FECHADA.");
+    if (motivoAlarme.startsWith("PORTA ESQUECIDA")) {
+      alarmeAtivo = false;
+      motivoAlarme = "Nenhum";
+    }
+  }
+  portaAbertaAnterior = portaAberta;
+
+  // Porta mantida aberta além do tempo limite (15s)
+  if (portaAberta && (agora - tempoPortaAbriu >= LIMITE_PORTA_ABERTA) && !alarmeAtivo) {
+    alarmeAtivo = true;
+    motivoAlarme = "PORTA ESQUECIDA ABERTA (> 15s)";
+    Serial.println("[ALERTA] " + motivoAlarme);
+    registrarLogNodeJS("PORTA_ABERTA_TEMPO", motivoAlarme);
   }
 
-  // 3. Pisca o LED Vermelho caso o alarme de intrusão esteja ativo
-  if (alarmeIntrusao) {
-    digitalWrite(PIN_LED_ALARME, (agora / 250) % 2);
+  // 4. ATUAÇÃO DO ALARME SONORO E VISUAL
+  if (alarmeAtivo) {
+    bool pulso = (agora / 300) % 2 == 0;
+    digitalWrite(PIN_LED_ALARM, pulso ? HIGH : LOW);
+    if (pulso) {
+      tone(PIN_BUZZER, 1000);
+    } else {
+      noTone(PIN_BUZZER);
+    }
+  } else {
+    digitalWrite(PIN_LED_ALARM, LOW);
+    noTone(PIN_BUZZER);
   }
 
-  // 4. Ciclo de Telemetria obrigatório a cada 2 segundos (2000ms)
-  if (agora - ultimoEnvio >= 2000) {
-    ultimoEnvio = agora;
-    enviarTelemetria("MONITORAMENTO_ROTINA");
+  // 5. SINCRONIZAÇÃO COM O SERVIDOR NODE.JS A CADA 2 SEGUNDOS
+  if (agora - ultimoEnvioTelemetria >= 2000) {
+    ultimoEnvioTelemetria = agora;
+    sincronizarComServidor();
   }
 }
 
-void liberarFechadura(String origem) {
-  portaDestravada = true;
-  alarmeIntrusao = false;
-  tempoDestravamento = millis();
-  digitalWrite(PIN_RELE_FECHADURA, HIGH);
-  digitalWrite(PIN_LED_ONBOARD, HIGH);
-  digitalWrite(PIN_LED_ALARME, LOW);
-  Serial.println("\n[ACESSO LIBERADO] Origem: " + origem + " | Destravada por 5s.");
-  enviarTelemetria("ACESSO_LIBERADO");
+void registrarLogNodeJS(String tipo, String descricao) {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  HTTPClient http;
+  http.begin(String(SERVER_URL) + "/api/logs");
+  http.addHeader("Content-Type", "application/json");
+
+  JsonDocument doc;
+  doc["tipo"] = tipo;
+  doc["descricao"] = descricao;
+
+  String payload;
+  serializeJson(doc, payload);
+  http.POST(payload);
+  http.end();
 }
 
-void trancarEArmar(String origem) {
-  portaDestravada = false;
-  alarmeIntrusao = false;
-  modoArmado = true;
-  digitalWrite(PIN_RELE_FECHADURA, LOW);
-  digitalWrite(PIN_LED_ONBOARD, LOW);
-  digitalWrite(PIN_LED_ALARME, LOW);
-  Serial.println("\n[SISTEMA ENCERRADO/ARMADO] Origem: " + origem);
-}
+void sincronizarComServidor() {
+  if (WiFi.status() != WL_CONNECTED) return;
 
-void enviarTelemetria(String eventoLog) {
-  float temperatura = dht.readTemperature();
-  float umidade = dht.readHumidity();
+  float temp = dht.readTemperature();
+  float umid = dht.readHumidity();
+  if (isnan(temp)) temp = 0.0;
+  if (isnan(umid)) umid = 0.0;
 
-  // Filtro NaN obrigatório (Teste 4 - Bug Hunt)
-  if (isnan(temperatura) || isnan(umidade)) {
-    Serial.println("[AVISO SENSOR] Falha na leitura do DHT22 (GPIO 4) - Aplicando filtro NaN!");
-    temperatura = 24.5;
-    umidade = 55.0;
-  }
+  HTTPClient http;
+  http.begin(String(SERVER_URL) + "/api/status");
+  http.addHeader("Content-Type", "application/json");
 
-  // Definição do Semáforo e Código Numérico Padrão
-  String semaforo = "NORMAL";
-  int codigoEstado = 0; // 0 = Trancada | 1 = Aberta Autorizada | 2 = Violação/Alarme
+  JsonDocument doc;
+  doc["temperatura"] = temp;
+  doc["humidade"] = umid;
+  doc["portaAberta"] = portaAberta;
+  doc["fechaduraDestravada"] = fechaduraDestravada;
+  doc["alarmeAtivo"] = alarmeAtivo;
+  doc["motivoAlarme"] = motivoAlarme;
+  doc["modoArmado"] = modoArmado;
 
-  if (alarmeIntrusao) {
-    semaforo = "CRITICO";
-    codigoEstado = 2;
-  } else if (portaDestravada) {
-    semaforo = "ATENCAO";
-    codigoEstado = 1;
-  } else if (temperatura > 28.0) {
-    semaforo = "ATENCAO";
-  }
+  String payload;
+  serializeJson(doc, payload);
+  int httpCode = http.POST(payload);
 
-  // Montagem do Pacote JSON Padronizado da Turma
-  String json = "{";
-  json += "\"grupo_id\":\"grupo_03\",";
-  json += "\"nome_subsistema\":\"Controle_Acesso_Porta\",";
-  json += "\"ip_local\":\"" + WiFi.localIP().toString() + "\",";
-  json += "\"mac_address\":\"" + WiFi.macAddress() + "\",";
-  json += "\"firmware_versao\":\"v1.0-LAN\",";
-  json += "\"temperatura\":" + String(temperatura, 1) + ",";
-  json += "\"umidade\":" + String(umidade, 1) + ",";
-  json += "\"variavel_principal_nome\":\"Estado_Porta_Codigo\",";
-  json += "\"variavel_principal_valor\":" + String(codigoEstado) + ",";
-  json += "\"rele_ativo\":" + String(portaDestravada ? "true" : "false") + ",";
-  json += "\"status_alerta\":\"" + semaforo + "\",";
-  json += "\"evento_auditoria\":\"" + eventoLog + "\"";
-  json += "}";
+  if (httpCode == 200) {
+    String resposta = http.getString();
+    JsonDocument resDoc;
+    DeserializationError err = deserializeJson(resDoc, resposta);
+    if (!err) {
+      bool cmdLiberar = resDoc["comandoLiberar"] | false;
+      bool novoModoArmado = resDoc["modoArmado"] | true;
+      bool cmdSilenciar = resDoc["comandoSilenciar"] | false;
 
-  Serial.println("POST /api/telemetria -> " + json);
+      modoArmado = novoModoArmado;
 
-  // Envio HTTP POST real com timeout curto (1500ms) para não travar a borda
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    http.setTimeout(1500);
-    http.begin(serverUrl);
-    http.addHeader("Content-Type", "application/json");
-
-    int httpCode = http.POST(json);
-    if (httpCode > 0) {
-      String resposta = http.getString();
-
-      if (resposta.indexOf("\"comando\":\"LIGAR\"") >= 0) {
-        liberarFechadura("Dashboard Web");
-      } else if (resposta.indexOf("\"comando\":\"PARAR\"") >= 0) {
-        // Resposta ao comando individual PARAR ou Macro Geral do Grupo 7 (Teste 5)
-        trancarEArmar("Comando Remoto / G7");
-      } else if (resposta.indexOf("\"comando\":\"ARMAR\"") >= 0) {
-        modoArmado = true;
-        Serial.println("[MODO] Laboratorio ARMADO via Dashboard.");
-      } else if (resposta.indexOf("\"comando\":\"DESARMAR\"") >= 0) {
-        modoArmado = false;
-        alarmeIntrusao = false;
-        digitalWrite(PIN_LED_ALARME, LOW);
-        Serial.println("[MODO] Laboratorio DESARMADO (Aula Ativa).");
+      if (cmdLiberar && !fechaduraDestravada) {
+        acionarFechadura("Dashboard Local (Remoto)");
       }
-    } else {
-      Serial.println("[HTTP] Servidor offline. Mantendo operacao autonoma na borda.");
+      if (cmdSilenciar) {
+        alarmeAtivo = false;
+        motivoAlarme = "Nenhum";
+        Serial.println("[ALARME] Alarme silenciado pelo operador.");
+      }
     }
-    http.end();
   }
+  http.end();
 }
