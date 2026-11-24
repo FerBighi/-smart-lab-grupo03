@@ -22,29 +22,41 @@ app.get('/', (req, res) => {
 });
 
 // =========================================================================
-// 1. ROTA POST /api/telemetria (Recebe pacotes do ESP32 a cada 2 segundos)
+// 1. ROTA POST /api/telemetria (Blindada contra NaN e integrada com G7)
 // =========================================================================
-app.post('/api/telemetria', (req, res) => {
+app.post('/api/telemetria', async (req, res) => {
   const dados = req.body;
   const agora = new Date();
   const horarioFormatado = agora.toLocaleTimeString('pt-BR');
   const dataHoraCompleta = agora.toLocaleString('pt-BR');
 
-  // Adiciona o carimbo de data/hora (timestamp) exigido na Etapa 2.2
+  // TESTE 4 (Bug Hunt): Bloqueia valores nulos/NaN para não quebrar o Chart.js
+  const ultimaValida = historicoLeituras[historicoLeituras.length - 1];
+  const tempSegura = (typeof dados.temperatura === 'number' && !isNaN(dados.temperatura)) 
+    ? dados.temperatura 
+    : (ultimaValida ? ultimaValida.temperatura : 25.0);
+    
+  const umidSegura = (typeof dados.umidade === 'number' && !isNaN(dados.umidade)) 
+    ? dados.umidade 
+    : (ultimaValida ? ultimaValida.umidade : 50.0);
+
   const leituraComTimestamp = {
     ...dados,
+    grupo_id: "grupo_03", // Garante a identificação exata exigida na Sprint 2
+    temperatura: tempSegura,
+    umidade: umidSegura,
     timestamp: horarioFormatado,
     data_hora: dataHoraCompleta,
     modo_armado: modoArmado
   };
 
-  // Salva no histórico mantendo estritamente as últimas 50 leituras
+  // Salva no histórico (máximo 50 leituras)
   historicoLeituras.push(leituraComTimestamp);
   if (historicoLeituras.length > 50) {
     historicoLeituras.shift();
   }
 
-  // Regra Grupo 3: Grava no Log de Auditoria sempre que o estado da porta mudar
+  // Regra Grupo 3: Grava no Log de Auditoria (limitado a 50 registros)
   const leituraAnterior = historicoLeituras[historicoLeituras.length - 2];
   if (!leituraAnterior || leituraAnterior.variavel_principal_valor !== dados.variavel_principal_valor) {
     if (dados.variavel_principal_valor === 1) {
@@ -62,13 +74,31 @@ app.post('/api/telemetria', (req, res) => {
         status: "CRITICO"
       });
     }
+    if (logAuditoria.length > 50) logAuditoria.pop();
   }
 
-  // Prepara o comando pendente para devolver ao ESP32 e limpa a fila
-  const comandoParaEnviar = comandoPendente;
+  // Prepara o comando local pendente
+  let comandoParaEnviar = comandoPendente;
   comandoPendente = "NENHUM";
 
-  // Resposta padrão exigida pela Etapa 2.1 e 2.2
+  // INTEGRAÇÃO GRUPO 7 (Descomente e coloque o IP do Grupo 7 na aula):
+  /*
+  try {
+    const respG7 = await fetch('http://192.168.0', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(leituraComTimestamp)
+    });
+    const dadosG7 = await respG7.json();
+    // Se o professor clicar em "ENCERRAR LABORATÓRIO" no G7, repassa "PARAR" ao ESP32
+    if (dadosG7.comando === "PARAR" || dadosG7.comando === "LIGAR") {
+      comandoParaEnviar = dadosG7.comando;
+    }
+  } catch (erro) {
+    console.log("⚠️ Aviso: Servidor do Grupo 7 offline no momento.");
+  }
+  */
+
   res.status(201).json({
     status: "sucesso",
     comando: comandoParaEnviar,
